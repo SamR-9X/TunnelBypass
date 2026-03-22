@@ -47,6 +47,15 @@ Note: `$(git describe --tags --abbrev=0 || echo v0.0.0)` sets the version from t
 
 Repo: [https://github.com/abdelrahman30x/TunnelBypass](https://github.com/abdelrahman30x/TunnelBypass) — [latest release](https://github.com/abdelrahman30x/TunnelBypass/releases/latest).
 
+### Quick Install (v1.2.0)
+```bash
+# Linux (amd64)
+curl -L -o tb.tar.gz https://github.com/abdelrahman30x/TunnelBypass/releases/download/v1.2.0/tunnelbypass_v1.2.0_linux_amd64.tar.gz && tar -xzf tb.tar.gz && ./tunnelbypass
+
+# Windows
+# Download: https://github.com/abdelrahman30x/TunnelBypass/releases/download/v1.2.0/tunnelbypass_v1.2.0_windows_amd64.exe
+```
+
 Release asset names vary by pipeline; adjust the filters below if your archive uses different patterns (e.g. `.zip` — unpack after download). Requires a published release with binaries attached.
 
 ### Suggested Release Asset Naming
@@ -72,11 +81,11 @@ gh release create $VERSION \
 
 ```powershell
 $owner = "abdelrahman30x"; $repo = "TunnelBypass"
-$rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$owner/$repo/releases/latest" `
-  -Headers @{ "User-Agent" = "TunnelBypass-Setup" }
-$asset = $rel.assets | Where-Object { $_.name -match '\.(exe|zip)$' -and $_.name -match 'windows|win|\.exe$' } | Select-Object -First 1
-if (-not $asset) { $asset = $rel.assets | Where-Object { $_.name -like "*.exe" } | Select-Object -First 1 }
-if (-not $asset) { throw "No matching Windows asset in the latest release. Download manually from GitHub Releases." }
+$url = "https://api.github.com/repos/$owner/$repo/releases/latest"
+# Fetch latest release and pick the asset (robust to dirty JSON)
+$rel = Invoke-RestMethod -Uri $url -Headers @{ "User-Agent" = "TunnelBypass-Setup" }
+$asset = $rel.assets | Where-Object { $_.name -match 'windows.*amd64\.exe$' -or ($_.name -match '\.exe$' -and $_.name -notmatch 'linux|darwin') } | Select-Object -First 1
+if (-not $asset) { throw "No matching Windows asset found. Please check: https://github.com/$owner/$repo/releases/latest" }
 Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $asset.name
 if ($asset.name -match '\.zip$') {
   Expand-Archive -Path $asset.name -DestinationPath . -Force
@@ -87,14 +96,13 @@ if ($asset.name -match '\.zip$') {
 .\tunnelbypass.exe --version
 ```
 
-### Linux (amd64, bash + [jq](https://jqlang.github.io/jq/))
+### Linux (bash)
 
 ```bash
 OWNER=abdelrahman30x REPO=TunnelBypass
-JSON=$(curl -fsSL -H "Accept: application/vnd.github+json" -H "User-Agent: tunnelbypass" \
-  "https://api.github.com/repos/${OWNER}/${REPO}/releases/latest")
-URL=$(echo "$JSON" | jq -r '.assets[] | select(.name | test("linux.*(amd64|x86_64)"; "i")) | .browser_download_url' | head -1)
-test -n "$URL" || { echo "No linux/amd64 asset found; pick one from the releases page." >&2; exit 1; }
+URL=$(curl -fsSL "https://api.github.com/repos/${OWNER}/${REPO}/releases/latest" | \
+  grep "browser_download_url" | grep -i "linux.*amd64" | head -1 | cut -d '"' -f 4)
+test -n "$URL" || { echo "No linux/amd64 asset found; check the releases page." >&2; exit 1; }
 curl -fsSL -o tb-download "$URL"
 case "$URL" in
   *.tar.gz|*.tgz) tar -xzf tb-download && rm -f tb-download ;;
@@ -105,19 +113,19 @@ chmod +x tunnelbypass 2>/dev/null || true
 ./tunnelbypass --version
 ```
 
-### macOS (bash + jq)
+### macOS (bash)
 
 ```bash
 OWNER=abdelrahman30x REPO=TunnelBypass
+# Pick a pattern based on architecture
 ARCH=$(uname -m)
 case "$ARCH" in
-  arm64) PAT='darwin.*(arm64|aarch64)|apple.*silicon';;
+  arm64) PAT='darwin.*(arm64|aarch64)';;
   *)     PAT='darwin.*(amd64|x86_64)';;
 esac
-JSON=$(curl -fsSL -H "Accept: application/vnd.github+json" -H "User-Agent: tunnelbypass" \
-  "https://api.github.com/repos/${OWNER}/${REPO}/releases/latest")
-URL=$(echo "$JSON" | jq -r --arg pat "$PAT" '.assets[] | select(.name | test($pat; "i")) | .browser_download_url' | head -1)
-test -n "$URL" || { echo "No macOS asset for $ARCH; download manually from GitHub Releases." >&2; exit 1; }
+URL=$(curl -fsSL "https://api.github.com/repos/${OWNER}/${REPO}/releases/latest" | \
+  grep "browser_download_url" | grep -iE "$PAT" | head -1 | cut -d '"' -f 4)
+test -n "$URL" || { echo "No macOS asset for $ARCH; download manually." >&2; exit 1; }
 curl -fsSL -o tb-download "$URL"
 case "$URL" in
   *.tar.gz|*.tgz) tar -xzf tb-download && rm -f tb-download ;;

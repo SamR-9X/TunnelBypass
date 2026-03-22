@@ -105,7 +105,9 @@ func PortListening(port int) bool {
 		return false
 	}
 	pStr := fmt.Sprintf(":%d", port)
-	return strings.Contains(string(out), pStr)
+	outStr := string(out)
+	// Precise check for :PORT followed by space or end of line to avoid matching :22 in :2222
+	return strings.Contains(outStr, pStr+" ") || strings.Contains(outStr, pStr+"\t") || strings.Contains(outStr, pStr+"\n") || strings.HasSuffix(strings.TrimSpace(outStr), pStr)
 }
 
 func EnsureFreeTCPPort(preferred int, label string) int {

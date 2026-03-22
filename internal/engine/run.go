@@ -127,6 +127,9 @@ func Run(ctx context.Context, spec cfg.RunSpec) error {
 	infRun := runtimeenv.Detect()
 	serviceAfterProvision := !spec.Behavior.Portable && transportInstallsOSService(spec.Transport) && !infRun.LikelyContainer
 	if serviceAfterProvision {
+		if (spec.Transport == "wss" || spec.Transport == "tls") && spec.SSH.Port == 22 && installer.SSHEmbedActive() {
+			spec.SSH.Port = installer.GetSSHBackendPort()
+		}
 		PrintResult(spec, res)
 		if err := svcinstall.InstallRunTransportService(spec.Transport, opt, elevate.IsAdmin()); err != nil {
 			return err
@@ -275,10 +278,10 @@ func printPrettyClientTunnel(spec cfg.RunSpec, _ transport.Result, endpoint, tra
 		fmt.Printf("  %s·%s %sssh -D 1080 -N -p 2222 %s@127.0.0.1%s\n", uicolors.ColorCyan, uicolors.ColorReset, uicolors.ColorBold, spec.Auth.SSHUser, uicolors.ColorReset)
 	case "wss":
 		if sni != "" {
-			fmt.Printf("  %s·%s %swstunnel client --local-to-remote tcp://127.0.0.1:2222:127.0.0.1:%d wss://%s:%d --tls-sni-override %s%s\n",
+			fmt.Printf("  %s·%s %swstunnel client -k --local-to-remote tcp://127.0.0.1:2222:127.0.0.1:%d wss://%s:%d --tls-sni-override %s%s\n",
 				uicolors.ColorCyan, uicolors.ColorReset, uicolors.ColorBold, sshPort, endpoint, spec.Port, sni, uicolors.ColorReset)
 		} else {
-			fmt.Printf("  %s·%s %swstunnel client --local-to-remote tcp://127.0.0.1:2222:127.0.0.1:%d wss://%s:%d%s\n",
+			fmt.Printf("  %s·%s %swstunnel client -k --local-to-remote tcp://127.0.0.1:2222:127.0.0.1:%d wss://%s:%d%s\n",
 				uicolors.ColorCyan, uicolors.ColorReset, uicolors.ColorBold, sshPort, endpoint, spec.Port, uicolors.ColorReset)
 		}
 		fmt.Printf("  %s·%s %sssh -D 1080 -N -p 2222 %s@127.0.0.1%s\n", uicolors.ColorCyan, uicolors.ColorReset, uicolors.ColorBold, spec.Auth.SSHUser, uicolors.ColorReset)

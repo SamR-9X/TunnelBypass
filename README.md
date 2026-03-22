@@ -22,14 +22,19 @@ Non-interactive example: `TB_PORTABLE=1 ./tunnelbypass run ssh` (see **Run** bel
 
 ## Build
 
-```bash
-make build
-# or
-go build -o tunnelbypass ./cmd    # Unix
-go build -o tunnelbypass.exe ./cmd # Windows
-```
+Use `make` or `go build` directly. Requires **Go 1.25+** (`go.mod`).
 
-On Windows without `make`, use `scripts/build.ps1`. Requires **Go 1.25+** (`go.mod`).
+To embed the current version (e.g. `v1.2.0`), add `-ldflags "-X main.Version=v1.2.0"`.
+
+| Scenario | Command |
+|----------|---------|
+| Linux/macOS — native binary | `go build -trimpath -ldflags "-s -w -X main.Version=$(git describe --tags --abbrev=0 || echo v0.0.0)" -o tunnelbypass ./cmd` |
+| Linux/macOS — cross-compile Windows | `GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.Version=$(git describe --tags --abbrev=0 || echo v0.0.0)" -o tunnelbypass.exe ./cmd` <br> (or `make build-windows`) |
+| Windows (PowerShell) — native binary | `go build -trimpath -ldflags "-s -w -X main.Version=$(git describe --tags --abbrev=0 || echo v0.0.0)" -o tunnelbypass.exe ./cmd` <br> (or `.\scripts\build.ps1`) |
+| Windows (PowerShell) — cross-compile Linux | `$env:GOOS='linux'; $env:GOARCH='amd64'; go build -trimpath -ldflags "-s -w -X main.Version=$(git describe --tags --abbrev=0 || echo v0.0.0)" -o tunnelbypass ./cmd` |
+
+Note: `$(git describe --tags --abbrev=0 || echo v0.0.0)` sets the version from the latest Git tag, or `v0.0.0` if no tags exist.
+
 
 ## Elevation and portable mode
 
@@ -38,18 +43,111 @@ On Windows without `make`, use `scripts/build.ps1`. Requires **Go 1.25+** (`go.m
 - Non-portable `run` for service-capable transports may elevate once so WinSW/systemd and firewall rules can run; use `--no-elevate`, `TB_NO_ELEVATE=1`, or `run portable` to stay in the current session.
 - `TB_PORTABLE=1` and `TB_DATA_DIR` select a user-writable data layout.
 
-## Direct download (releases)
+## Direct download (GitHub releases)
 
-Repo: [https://github.com/abdelrahman30x/TunnelBypass](https://github.com/abdelrahman30x/TunnelBypass)
+Repo: [https://github.com/abdelrahman30x/TunnelBypass](https://github.com/abdelrahman30x/TunnelBypass) — [latest release](https://github.com/abdelrahman30x/TunnelBypass/releases/latest).
 
-**Windows (PowerShell):** fetch latest `.exe` from the GitHub API, then:
+Release asset names vary by pipeline; adjust the filters below if your archive uses different patterns (e.g. `.zip` — unpack after download). Requires a published release with binaries attached.
 
-```powershell
-.\tunnelbypass.exe --version
-.\tunnelbypass.exe run --type reality --port 443 --sni epicgames.com --uuid auto
+### Suggested Release Asset Naming
+
+For a `v1.2.0` release (or `$(git describe --tags --abbrev=0 || echo v0.0.0)` for the actual version):
+
+| OS | Suggested Filename | Contents |
+|----|--------------------|----------|
+| Linux (amd64) | `tunnelbypass_1.2.0_linux_amd64.tar.gz` | `tunnelbypass` (executable) |
+| Windows (amd64) | `tunnelbypass_1.2.0_windows_amd64.exe` | `tunnelbypass.exe` (executable) |
+
+Example `gh release` command to create a release and upload assets:
+
+```bash
+VERSION=$(git describe --tags --abbrev=0 || echo v0.0.0)
+gh release create $VERSION \
+  tunnelbypass_${VERSION}_linux_amd64.tar.gz#"TunnelBypass for Linux (AMD64)" \
+  tunnelbypass_${VERSION}_windows_amd64.exe#"TunnelBypass for Windows (AMD64)" \
+  --title "Release $VERSION" --notes "See CHANGELOG.md for details."
 ```
 
-**Linux:** same idea with `curl`/`python3` to pick a linux/amd64 asset; add `--data-dir` for a fixed data root if needed.
+### Windows (PowerShell)
+
+```powershell
+$owner = "abdelrahman30x"; $repo = "TunnelBypass"
+$rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$owner/$repo/releases/latest" `
+  -Headers @{ "User-Agent" = "TunnelBypass-Setup" }
+$asset = $rel.assets | Where-Object { $_.name -match '\.(exe|zip)$' -and $_.name -match 'windows|win|\.exe$' } | Select-Object -First 1
+if (-not $asset) { $asset = $rel.assets | Where-Object { $_.name -like "*.exe" } | Select-Object -First 1 }
+if (-not $asset) { throw "No matching Windows asset in the latest release. Download manually from GitHub Releases." }
+Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $asset.name
+if ($asset.name -match '\.zip$') {
+  Expand-Archive -Path $asset.name -DestinationPath . -Force
+  Get-ChildItem -Filter "tunnelbypass*.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 | ForEach-Object { Copy-Item $_.FullName -Destination ".\tunnelbypass.exe" -Force }
+} elseif ($asset.name -match '\.exe$') {
+  Copy-Item $asset.name -Destination ".\tunnelbypass.exe" -Force
+}
+.\tunnelbypass.exe --version
+```
+
+### Linux (amd64, bash + [jq](https://jqlang.github.io/jq/))
+
+```bash
+OWNER=abdelrahman30x REPO=TunnelBypass
+JSON=$(curl -fsSL -H "Accept: application/vnd.github+json" -H "User-Agent: tunnelbypass" \
+  "https://api.github.com/repos/${OWNER}/${REPO}/releases/latest")
+URL=$(echo "$JSON" | jq -r '.assets[] | select(.name | test("linux.*(amd64|x86_64)"; "i")) | .browser_download_url' | head -1)
+test -n "$URL" || { echo "No linux/amd64 asset found; pick one from the releases page." >&2; exit 1; }
+curl -fsSL -o tb-download "$URL"
+case "$URL" in
+  *.tar.gz|*.tgz) tar -xzf tb-download && rm -f tb-download ;;
+  *.zip) unzip -o tb-download && rm -f tb-download ;;
+  *) mv tb-download tunnelbypass ;;
+esac
+chmod +x tunnelbypass 2>/dev/null || true
+./tunnelbypass --version
+```
+
+### macOS (bash + jq)
+
+```bash
+OWNER=abdelrahman30x REPO=TunnelBypass
+ARCH=$(uname -m)
+case "$ARCH" in
+  arm64) PAT='darwin.*(arm64|aarch64)|apple.*silicon';;
+  *)     PAT='darwin.*(amd64|x86_64)';;
+esac
+JSON=$(curl -fsSL -H "Accept: application/vnd.github+json" -H "User-Agent: tunnelbypass" \
+  "https://api.github.com/repos/${OWNER}/${REPO}/releases/latest")
+URL=$(echo "$JSON" | jq -r --arg pat "$PAT" '.assets[] | select(.name | test($pat; "i")) | .browser_download_url' | head -1)
+test -n "$URL" || { echo "No macOS asset for $ARCH; download manually from GitHub Releases." >&2; exit 1; }
+curl -fsSL -o tb-download "$URL"
+case "$URL" in
+  *.tar.gz|*.tgz) tar -xzf tb-download && rm -f tb-download ;;
+  *.zip) unzip -o tb-download && rm -f tb-download ;;
+  *) mv tb-download tunnelbypass ;;
+esac
+chmod +x tunnelbypass
+./tunnelbypass --version
+```
+
+### GitHub CLI (optional)
+
+```bash
+gh release download --repo abdelrahman30x/TunnelBypass --clobber
+```
+
+Then run the binary that matches your OS from the current directory.
+
+### Example `run` commands (non-interactive)
+
+Wizard order and rough DPI-bypass strength (more stars ≈ stronger camouflage on hostile networks). On Windows use `.\tunnelbypass.exe` instead of `./tunnelbypass`. Add `--data-dir <path>` or `TB_PORTABLE=1` when you need a fixed or user-writable data root.
+
+| | Stack | Strength | Example |
+|---|--------|----------|---------|
+| 1 | Reality / XTLS | ★★★★★ | `./tunnelbypass run --type reality --port 443 --sni epicgames.com --uuid auto` |
+| 2 | WSS (wstunnel) | ★★★★ | `./tunnelbypass run --type wss --port 443 --sni epicgames.com` |
+| 3 | TLS (stunnel) | ★★★ | `./tunnelbypass run --type tls --port 443 --sni epicgames.com` |
+| 4 | QUIC (Hysteria v2) | ★★ | `./tunnelbypass run --type hysteria --port 443 --sni epicgames.com --uuid auto` |
+| 5 | SSH | ★★ | `./tunnelbypass run ssh` |
+| 6 | WireGuard | ★ | `./tunnelbypass run --type wireguard --port 51820 --sni example.com` |
 
 ## Docker
 

@@ -139,7 +139,7 @@ func GenerateWSSConfig(opt types.ConfigOptions) (string, error) {
 		remoteSSH = 22
 	}
 	// wstunnel v10: tcp://localPort:remoteHost:remotePort for --local-to-remote
-	wstunnelCommand := fmt.Sprintf("wstunnel client --insecure --local-to-remote tcp://127.0.0.1:%d:127.0.0.1:%d wss://%s:%d", localPort, remoteSSH, opt.ServerAddr, opt.Port)
+	wstunnelCommand := fmt.Sprintf("wstunnel client --local-to-remote tcp://127.0.0.1:%d:127.0.0.1:%d wss://%s:%d", localPort, remoteSSH, opt.ServerAddr, opt.Port)
 	if opt.Sni != "" {
 		wstunnelCommand += fmt.Sprintf(" --tls-sni-override %s", opt.Sni)
 	}
